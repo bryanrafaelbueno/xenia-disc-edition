@@ -62,8 +62,9 @@ does not modify firmware, bypass drive protections, or decrypt disc content.
 
 ## Download
 
-Release builds are attached to the repository's GitHub Releases page. The
-Windows release archive contains:
+Release builds are attached to the
+[GitHub Releases page](https://github.com/bryanrafaelbueno/xenia-disc-edition/releases).
+The Windows release archive contains:
 
 - `xenia_disc.exe`
 - `Launch-Disc.bat`
