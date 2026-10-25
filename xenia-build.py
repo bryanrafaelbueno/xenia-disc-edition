@@ -216,7 +216,8 @@ def import_vs_environment():
         " Microsoft.VisualStudio.Product.Enterprise"
         " Microsoft.VisualStudio.Product.Professional"
         " Microsoft.VisualStudio.Product.Community"
-        " Microsoft.VisualStudio.Product.BuildTools",
+        " Microsoft.VisualStudio.Product.BuildTools"
+        " -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
         encoding="utf-8",
     )
     if vswhere:

@@ -1,75 +1,172 @@
 <p align="center">
-    <a href="https://github.com/xenia-canary/xenia-canary/tree/canary_experimental/assets/icon">
-        <img height="256px" src="https://raw.githubusercontent.com/xenia-canary/xenia/master/assets/icon/256.png" />
-    </a>
+  <a href="https://github.com/xenia-canary/xenia-canary">
+    <img height="200px" src="assets/icon/256.png" alt="Xenia Disc Edition" />
+  </a>
 </p>
 
-<h1 align="center">Xenia Canary - Xbox 360 Emulator</h1>
+<h1 align="center">Xenia Disc Edition</h1>
 
-Xenia Canary is an experimental fork of the Xenia emulator. For more information, see the
-[Xenia Canary wiki](https://github.com/xenia-canary/xenia-canary/wiki).
+<p align="center">
+  A fork of <a href="https://github.com/xenia-canary/xenia-canary">Xenia Canary</a>
+  that can launch Xbox 360 games directly from a compatible optical disc drive.
+</p>
 
-Come chat with us about **emulator-related topics** on [Discord](https://discord.gg/Q9mxZf9).
-For developer chat join `#dev` but stay on topic. Lurking is not only fine, but encouraged!
-Please check the [FAQ](https://github.com/xenia-canary/xenia-canary/wiki/FAQ) page before asking questions.
-We've got jobs/lives/etc, so don't expect instant answers.
+## What is this?
 
-Discussing illegal activities will get you banned.
+Xenia Disc Edition is an experimental Xbox 360 emulator derived from Xenia
+Canary. The original Xenia loads games from disc images or extracted folders.
+This fork adds a physical-disc backend:
 
-## Status
+- It reads the Xbox 360 game partition directly from an optical drive.
+- It does not require an ISO, GOD package, or a multi-gigabyte temporary dump.
+- The disc is kept in the drive while the game runs.
 
-Buildbot | Status | Releases
--------- | ------ | --------
-Canary (🪟, 🐧) | [![CI](https://github.com/xenia-canary/xenia-canary/actions/workflows/Orchestrator.yml/badge.svg?branch=canary_experimental)](https://github.com/xenia-canary/xenia-canary/actions/workflows/Orchestrator.yml/badge.svg?branch=canary_experimental) [![Codacy Badge](https://app.codacy.com/project/badge/Grade/cd506034fd8148309a45034925648499)](https://app.codacy.com/gh/xenia-canary/xenia-canary/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade) | [Latest](https://github.com/xenia-canary/xenia-canary/releases/latest) ◦ [All](https://github.com/xenia-canary/xenia-canary/releases) ◦ [Old](https://github.com/xenia-canary/xenia-canary-releases/releases)
+The feature was developed and verified against a retail Xbox 360 disc on
+Windows using an ATAPI `iHAS122 F` drive. See `RELEASE_NOTES.md` for the tested
+title and build details.
 
-### Experimental Netplay
+> **This is not an official Xenia release.** It is an independent fork. The
+> emulator core, graphics backends, kernel, and tooling come from Xenia Canary
+> and its contributors. Please report issues with this fork here, not in the
+> upstream issue tracker, unless the problem also reproduces with an upstream
+> build.
 
-Buildbot | Status | Releases
--------- | ------ | --------
-Windows | [![Codacy Badge](https://app.codacy.com/project/badge/Grade/d814c4b6aa444dcc9c1631e0224b2739)](https://app.codacy.com/gh/AdrianCassar/xenia-canary/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade) | [Latest](https://github.com/AdrianCassar/xenia-canary/releases/latest)
+## Features
 
-## Quickstart
+- **Direct optical disc support** through a new `OpticalDiscDevice` VFS backend.
+- Raw 2048-byte SCSI `READ(12)` sector reads, using
+  `SCSI_PASS_THROUGH_DIRECT`.
+- Detection of the Xbox 360 game partition at the full-disc XGD offset
+  `0xFD90000` (LBA `0x1FB20`), plus the offsets used by trimmed images.
+- On-demand XDVDFS parsing with a 4 MiB sector cache, so game files are read
+  from the disc as needed.
+- **File → Open Disc Drive → <letter>** menu in the emulator.
+- Command-line drive targets: `E:`, `E:\`, or `\\.\E:`.
+- Existing ISO, XEX, STFS, ZAR, and folder launching still work.
 
-See the [Quickstart](https://github.com/xenia-canary/xenia-canary/wiki/Quickstart) page.
+## Requirements
 
-## FAQ
+- 64-bit Windows 10 or Windows 11.
+- Visual Studio 2022 or Build Tools 2022 to build from source.
+- A Vulkan or Direct3D 12 capable GPU for the emulator.
+- **A drive that can read the game partition of Xbox 360 discs.**
 
-See the [frequently asked questions](https://github.com/xenia-canary/xenia-canary/wiki/FAQ) page.
+Xbox 360 discs advertise only their DVD-Video partition in the normal DVD
+table of contents. The game data starts at LBA `0x1FB20`, outside that
+advertised range. A stock PC DVD drive can usually read the video partition but
+will reject reads at the game partition with a SCSI error.
 
-## Game Compatibility
+Drives with Xbox 360 read support include Kreon-compatible drives, Xbox 360
+drives flashed in 0800 mode, and certain iHAS/BurnerMax-style drives. This fork
+does not modify firmware, bypass drive protections, or decrypt disc content.
 
-See the [Game compatibility list](https://github.com/xenia-canary/game-compatibility/issues)
-for currently tracked games, and feel free to contribute your own updates,
-screenshots, and information there following the [existing conventions](https://github.com/xenia-canary/game-compatibility/blob/canary/README.md).
+## Download
 
-## Building
+Release builds are attached to the repository's GitHub Releases page. The
+Windows release archive contains:
 
-See [building.md](docs/building.md) for setup and information about the
-`xb` script. When writing code, check the [style guide](docs/style_guide.md)
-and be sure to run clang-format!
+- `xenia_disc.exe`
+- `Launch-Disc.bat`
+- `README.md`
+- `LICENSE`
+- `disc-test.log` (the verification log for the release build)
+- `optical-disc-support.patch` (the changes against Xenia Canary)
 
-## Contributors Wanted!
+If you build from source, the executable is produced as
+`build/bin/Windows/Release/xenia_disc.exe`.
 
-Have some spare time, know advanced C++, and want to write an emulator?
-Contribute! There's a ton of work that needs to be done, a lot of which
-is wide open greenfield fun.
+## Usage
 
-**For general rules and guidelines please see [CONTRIBUTING.md](.github/CONTRIBUTING.md).**
+1. Insert an Xbox 360 game disc and let the drive spin up.
+2. Start `xenia_disc.exe`.
+3. Choose **File → Open Disc Drive → E:** (use your drive letter).
 
-Fixes and optimizations are always welcome (please!), but in addition to
-that there are some major work areas still untouched:
+Or launch directly:
 
-* Help work through [missing functionality/bugs in games](https://github.com/xenia-canary/xenia-canary/labels/compat)
-* Reduce the size of Xenia's [huge log files](https://github.com/xenia-canary/xenia-canary/issues/1526)
-* Skilled with Linux? A strong contributor is needed to [help with porting](https://github.com/xenia-canary/xenia-canary/labels/platform-linux)
+```bat
+xenia_disc.exe --target=E:
+```
 
-See more projects [good for contributors](https://github.com/xenia-canary/xenia-canary/labels/good%20first%20issue). It's a good idea to ask on Discord and check the issues page before beginning work on
-something.
+The target can also be passed as a positional argument:
 
-## Disclaimer
+```bat
+xenia_disc.exe E:
+```
 
-The goal of this project is to experiment, research, and educate on the topic
-of emulation of modern devices and operating systems. **It is not for enabling
-illegal activity**. All information is obtained via reverse engineering of
-legally purchased devices and games and information made public on the internet
-(you'd be surprised what's indexed on Google...).
+`Launch-Disc.bat` detects the first optical drive and starts Xenia with it. To
+choose a drive explicitly:
+
+```bat
+Launch-Disc.bat E:
+```
+
+Keep the disc inserted while playing. The game reads files from the disc on
+demand.
+
+## Building from source
+
+```bat
+git clone --recursive https://github.com/bryanrafaelbueno/xenia-disc-edition.git
+cd xenia-disc-edition
+xb setup
+xb build --config=release
+```
+
+The Windows build requires the Vulkan SDK (for the SPIR-V shader tools) and a
+Visual Studio installation with the C++ x64 workload. See
+`docs/building.md` for the upstream build notes.
+
+A small fix is included in `xenia-build.py` so Visual Studio discovery prefers
+an installation that actually contains the MSVC x64 toolset. This is useful on
+machines that have both Visual Studio Community and Build Tools installed.
+
+## How it works
+
+The drive is opened as `\\.\X:` and read with SCSI pass-through commands rather
+than through the mounted Windows filesystem. Each request reads 2048-byte
+sectors. The device probes the known game-partition offsets, verifies the
+`MICROSOFT*XBOX*MEDIA` signature, reads the XDVDFS root directory, and exposes
+the files through Xenia's virtual filesystem. A small sector cache serves
+repeated and sequential reads; the cache is intentionally bounded so the
+emulator does not need a full disc image in memory.
+
+See [`docs/disc-drive.md`](docs/disc-drive.md) for the implementation details
+and the SCSI/XGD layout.
+
+## Verified configuration
+
+The first release was tested with:
+
+- Drive: `ATAPI iHAS122 F` at `E:`
+- Disc: *Call of Duty: Black Ops* (title ID `41560855`)
+- Backend: Direct3D 12
+- Result: Xenia found XDVDFS at `0xFD90000`, loaded `default.xex`, resolved the
+  title, and read game data files directly from the disc.
+
+```text
+Opened optical drive \\.\E: (2048 byte sectors, reported media size 7838695424).
+Found XDVDFS at disc offset 0xFD90000.
+Mounted optical disc from \\.\E:: XDVDFS at 0xFD90000, root sector 7631, root size 4096 bytes.
+Loading module GAME:\default.xex
+Title name: Call of Duty Black Ops
+```
+
+## Limitations
+
+- A standard DVD drive without Xbox 360 read support will not work. The
+  emulator writes the SCSI error to `xenia.log`.
+- The disc must stay inserted while the game is running.
+- Multi-disc swapping through an in-game prompt is not implemented yet.
+  Close the emulator, insert the next disc, and launch the drive again.
+- Optical loading is slower than loading an ISO from an SSD. The cache helps,
+  but the first read of each file still comes from the disc.
+- The fork does not create disc backups and does not include any game data.
+
+## License and credits
+
+Xenia Disc Edition is distributed under the BSD license, the same license as
+Xenia. See [`LICENSE`](LICENSE).
+
+Xenia was created by Ben Vanik and is developed by the Xenia and Xenia Canary
+contributors. This fork builds on their work. The direct-disc implementation
+and this README are the changes maintained here.

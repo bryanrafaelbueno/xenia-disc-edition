@@ -167,7 +167,7 @@ using namespace xe::hid;
 using namespace xe::gpu;
 
 constexpr std::string_view kRecentlyPlayedTitlesFilename = "recent.toml";
-constexpr std::string_view kBaseTitle = "Xenia-canary";
+constexpr std::string_view kBaseTitle = "Xenia Disc Edition";
 
 EmulatorWindow::EmulatorWindow(Emulator* emulator,
                                ui::WindowedAppContext& app_context,
@@ -760,6 +760,24 @@ bool EmulatorWindow::Initialize() {
     file_menu->AddChild(
         MenuItem::Create(MenuItem::Type::kString, "&Open...", "Ctrl+O",
                          std::bind(&EmulatorWindow::FileOpen, this)));
+
+    auto disc_menu =
+        MenuItem::Create(MenuItem::Type::kPopup, "Open &Disc Drive");
+    const auto disc_drives = Emulator::GetOpticalDrivePaths();
+    if (disc_drives.empty()) {
+      auto no_drives = MenuItem::Create(MenuItem::Type::kString,
+                                        "No optical drives detected");
+      no_drives->SetEnabled(false);
+      disc_menu->AddChild(std::move(no_drives));
+    } else {
+      for (const auto& drive : disc_drives) {
+        disc_menu->AddChild(MenuItem::Create(
+            MenuItem::Type::kString, drive, "", [this, drive]() {
+              RunTitle(std::filesystem::path(drive));
+            }));
+      }
+    }
+    file_menu->AddChild(std::move(disc_menu));
     file_menu->AddChild(std::move(recent_menu));
     file_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
     zar_menu->AddChild(
@@ -926,13 +944,15 @@ bool EmulatorWindow::Initialize() {
     help_menu->AddChild(MenuItem::Create(
         MenuItem::Type::kString, "Recent changes on GitHub...", []() {
           LaunchWebBrowser(
-              "https://github.com/xenia-canary/xenia-canary/"
-              "compare/" XE_BUILD_COMMIT "..." XE_BUILD_BRANCH);
+              "https://github.com/bryanrafaelbueno/xenia-disc-edition/"
+              "commits/main");
         }));
     help_menu->AddChild(MenuItem::Create(MenuItem::Type::kSeparator));
     help_menu->AddChild(MenuItem::Create(
-        MenuItem::Type::kString, "&About...",
-        []() { LaunchWebBrowser("https://xenia.jp/about/"); }));
+        MenuItem::Type::kString, "&About...", []() {
+          LaunchWebBrowser(
+              "https://github.com/bryanrafaelbueno/xenia-disc-edition#readme");
+        }));
   }
   main_menu->AddChild(std::move(help_menu));
 
@@ -1760,10 +1780,10 @@ void EmulatorWindow::ShowFAQ() {
 void EmulatorWindow::ShowBuildCommit() {
 #ifdef XE_BUILD_IS_PR
   LaunchWebBrowser(
-      "https://github.com/xenia-canary/xenia-canary/pull/" XE_BUILD_PR_NUMBER);
+      "https://github.com/bryanrafaelbueno/xenia-disc-edition/pull/" XE_BUILD_PR_NUMBER);
 #else
   LaunchWebBrowser(
-      "https://github.com/xenia-canary/xenia-canary/commit/" XE_BUILD_COMMIT);
+      "https://github.com/bryanrafaelbueno/xenia-disc-edition/commit/" XE_BUILD_COMMIT);
 #endif
 }
 
@@ -2266,8 +2286,11 @@ std::string EmulatorWindow::CanonicalizeFileExtension(
 
 xe::X_STATUS EmulatorWindow::RunTitle(
     const std::filesystem::path& path_to_file) {
+  const bool is_optical_drive = Emulator::IsOpticalDrivePath(path_to_file);
+
   std::error_code ec = {};
-  bool titleExists = std::filesystem::exists(path_to_file, ec);
+  bool titleExists =
+      is_optical_drive || std::filesystem::exists(path_to_file, ec);
 
   if (path_to_file.empty() || !titleExists) {
     std::string log_msg =
@@ -2303,10 +2326,14 @@ xe::X_STATUS EmulatorWindow::RunTitle(
   }
 
   // Prevent crashing the emulator by not loading a game if a game is already
-  // loaded.
-  auto abs_path = std::filesystem::absolute(path_to_file);
+  // loaded. Drive roots must not be made absolute relative to the current
+  // directory (D: means a different location depending on the current
+  // directory on that drive).
+  auto launch_path = is_optical_drive
+                         ? path_to_file
+                         : std::filesystem::path(std::filesystem::absolute(path_to_file));
 
-  auto extension = CanonicalizeFileExtension(abs_path);
+  auto extension = CanonicalizeFileExtension(launch_path);
 
   if (extension == ".7z" || extension == ".zip" || extension == ".rar" ||
       extension == ".tar" || extension == ".gz") {
@@ -2319,7 +2346,7 @@ xe::X_STATUS EmulatorWindow::RunTitle(
     return X_STATUS_UNSUCCESSFUL;
   }
 
-  auto result = emulator_->LaunchPath(abs_path);
+  auto result = emulator_->LaunchPath(launch_path);
 
   disable_hotkeys_ = false;
 
@@ -2328,19 +2355,34 @@ xe::X_STATUS EmulatorWindow::RunTitle(
   if (result) {
     XELOGE("Failed to launch target: {:08X}", result);
 
-    xe::ui::ImGuiDialog::ShowMessageBox(
-        imgui_drawer_.get(), "Title Launch Failed!",
-        "Failed to launch title.\n\nCheck xenia.log for technical details.");
+    if (is_optical_drive) {
+      xe::ui::ImGuiDialog::ShowMessageBox(
+          imgui_drawer_.get(), "Disc Read Failed!",
+          fmt::format(
+              "Could not read an Xbox 360 game from {}.\n\n"
+              "Make sure an Xbox 360 game disc is inserted and that the drive "
+              "can read the game partition. Standard DVD drives can only read "
+              "the video partition; reading games requires a drive with "
+              "Xbox 360 support (for example Kreon or 0800 firmware).\n\n"
+              "See xenia.log for technical details.",
+              xe::path_to_utf8(path_to_file)));
+    } else {
+      xe::ui::ImGuiDialog::ShowMessageBox(
+          imgui_drawer_.get(), "Title Launch Failed!",
+          "Failed to launch title.\n\nCheck xenia.log for technical details.");
+    }
 
     emulator_->file_system()->Clear();
   } else {
-    AddRecentlyLaunchedTitle(path_to_file, emulator_->title_name());
+    if (!is_optical_drive) {
+      AddRecentlyLaunchedTitle(path_to_file, emulator_->title_name());
 
-    auto xam =
-        emulator_->kernel_state()->GetKernelModule<kernel::xam::XamModule>(
-            "xam.xex");
+      auto xam =
+          emulator_->kernel_state()->GetKernelModule<kernel::xam::XamModule>(
+              "xam.xex");
 
-    xam->loader_data().host_path = xe::path_to_utf8(abs_path);
+      xam->loader_data().host_path = xe::path_to_utf8(launch_path);
+    }
   }
 
   return result;

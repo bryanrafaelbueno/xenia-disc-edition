@@ -226,6 +226,13 @@ class Emulator {
   // using heuristics.
   X_STATUS LaunchPath(const std::filesystem::path& path);
 
+  // Returns true if the path names an optical disc drive root (for example
+  // "D:", "D:\", or "\\.\D:") rather than a file.
+  static bool IsOpticalDrivePath(const std::filesystem::path& path);
+
+  // Returns the drive letters of the optical drives on the system.
+  static std::vector<std::string> GetOpticalDrivePaths();
+
   // Launches a game from a .xex file by mounting the containing folder as if it
   // was an extracted STFS container.
   X_STATUS LaunchXexFile(const std::filesystem::path& path);

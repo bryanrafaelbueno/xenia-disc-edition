@@ -116,9 +116,11 @@ DEFINE_bool(mount_memory_unit, false, "Enable memory unit (MU) mount",
 
 DECLARE_bool(force_mount_devkit);
 
-DEFINE_transient_path(target, "",
-                      "Specifies the target .xex or .iso to execute.",
-                      "General");
+DEFINE_transient_path(
+    target, "",
+    "Specifies the target .xex or .iso to execute, or an optical disc drive "
+    "root such as D: to read a game directly from a disc.",
+    "General");
 #ifndef XE_PLATFORM_WIN32
 DEFINE_transient_bool(portable, false,
                       "Specifies if Xenia should run in portable mode.",
@@ -750,8 +752,11 @@ void EmulatorApp::EmulatorThread() {
   }
 
   if (!path.empty()) {
-    // Normalize the path and make absolute.
-    auto abs_path = std::filesystem::absolute(path);
+    // Normalize the path and make absolute. Optical drive roots must be left
+    // alone because "D:" is relative to that drive's current directory.
+    auto abs_path = Emulator::IsOpticalDrivePath(path)
+                        ? path
+                        : std::filesystem::path(std::filesystem::absolute(path));
 
     result = app_context().CallInUIThread(
         [this, abs_path]() { return emulator_window_->RunTitle(abs_path); });

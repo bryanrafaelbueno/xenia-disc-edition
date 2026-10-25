@@ -59,6 +59,7 @@
 #include "xenia/vfs/devices/disc_zarchive_device.h"
 #include "xenia/vfs/devices/host_path_device.h"
 #include "xenia/vfs/devices/null_device.h"
+#include "xenia/vfs/devices/optical_disc_device.h"
 #include "xenia/vfs/devices/xcontent_container_device.h"
 #include "xenia/vfs/virtual_file_system.h"
 
@@ -372,6 +373,12 @@ X_STATUS Emulator::TerminateTitle() {
 
 const std::unique_ptr<vfs::Device> Emulator::CreateVfsDevice(
     const std::filesystem::path& path, const std::string_view mount_path) {
+  // Optical drives are not regular files, so they must be detected before
+  // attempting to open or stat the path.
+  if (vfs::OpticalDiscDevice::IsDrivePath(path)) {
+    return std::make_unique<vfs::OpticalDiscDevice>(mount_path, path);
+  }
+
   // Must check if the type has changed e.g. XamSwapDisc
   switch (GetFileSignature(path)) {
     case FileSignatureType::XEX0:
@@ -478,6 +485,12 @@ X_STATUS Emulator::MountPath(const std::filesystem::path& path,
 
 Emulator::FileSignatureType Emulator::GetFileSignature(
     const std::filesystem::path& path) {
+  // A drive root has no file header to inspect, but it is mounted through the
+  // same disc image code path.
+  if (vfs::OpticalDiscDevice::IsDrivePath(path)) {
+    return FileSignatureType::XISO;
+  }
+
   FILE* file = xe::filesystem::OpenFile(path, "rb");
 
   if (!file) {
@@ -558,6 +571,14 @@ Emulator::FileSignatureType Emulator::GetFileSignature(
 
   XELOGE("{}: {} ({:08X})", __func__, path.extension(), magic_value);
   return FileSignatureType::Unknown;
+}
+
+bool Emulator::IsOpticalDrivePath(const std::filesystem::path& path) {
+  return vfs::OpticalDiscDevice::IsDrivePath(path);
+}
+
+std::vector<std::string> Emulator::GetOpticalDrivePaths() {
+  return vfs::OpticalDiscDevice::GetAvailableDrivePaths();
 }
 
 X_STATUS Emulator::LaunchPath(const std::filesystem::path& path) {
