@@ -34,6 +34,10 @@
 #include "xenia/ui/windowed_app_context.h"
 #include "xenia/vfs/devices/host_path_device.h"
 
+#if XE_PLATFORM_WIN32
+#include "xenia/base/platform_win.h"
+#endif  // XE_PLATFORM_WIN32
+
 // Available audio systems:
 #include "xenia/apu/nop/nop_audio_system.h"
 #if XE_PLATFORM_LINUX
@@ -120,6 +124,12 @@ DEFINE_transient_path(
     target, "",
     "Specifies the target .xex or .iso to execute, or an optical disc drive "
     "root such as D: to read a game directly from a disc.",
+    "General");
+
+DEFINE_transient_string(
+    wait_for_pid, "",
+    "Internal: wait for this process ID to exit before starting. Used by the "
+    "native disc auto-swap restart.",
     "General");
 #ifndef XE_PLATFORM_WIN32
 DEFINE_transient_bool(portable, false,
@@ -482,6 +492,20 @@ std::vector<std::unique_ptr<hid::InputDriver>> EmulatorApp::CreateInputDrivers(
 }
 
 bool EmulatorApp::OnInitialize() {
+#if XE_PLATFORM_WIN32
+  if (!cvars::wait_for_pid.empty()) {
+    unsigned long wait_pid =
+        std::strtoul(cvars::wait_for_pid.c_str(), nullptr, 10);
+    if (wait_pid) {
+      HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, wait_pid);
+      if (process) {
+        WaitForSingleObject(process, 60000);
+        CloseHandle(process);
+      }
+    }
+  }
+#endif  // XE_PLATFORM_WIN32
+
   Profiler::Initialize();
   Profiler::ThreadEnter("Main");
 

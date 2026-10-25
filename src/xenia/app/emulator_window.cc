@@ -9,6 +9,12 @@
 
 #include "xenia/app/emulator_window.h"
 
+#include <chrono>
+
+#if XE_PLATFORM_WIN32
+#include "xenia/base/platform_win.h"
+#endif  // XE_PLATFORM_WIN32
+
 #include "third_party/imgui/imgui.h"
 #include "third_party/stb/stb_image_write.h"
 #if defined(__clang__)
@@ -49,6 +55,7 @@
 #include "xenia/ui/presenter.h"
 #include "xenia/ui/ui_event.h"
 #include "xenia/ui/virtual_key.h"
+#include "xenia/vfs/devices/optical_disc_device.h"
 
 #include "version.h"
 
@@ -68,6 +75,12 @@ DEFINE_bool(fullscreen, false, "Whether to launch the emulator in fullscreen.",
             "Display");
 
 DEFINE_bool(controller_hotkeys, false, "Hotkeys for Xbox and PS controllers.",
+            "General");
+
+DEFINE_bool(disc_auto_swap, true,
+            "Automatically restart Xenia with the new game when the disc in "
+            "the optical drive changes. Only applies to games launched from "
+            "an optical drive.",
             "General");
 
 DEFINE_string(
@@ -211,6 +224,7 @@ std::unique_ptr<EmulatorWindow> EmulatorWindow::Create(
 }
 
 EmulatorWindow::~EmulatorWindow() {
+  StopDiscWatcher();
   // Notify the ImGui drawer that the immediate drawer is being destroyed.
   ShutdownGraphicsSystemPresenterPainting();
 }
@@ -1304,7 +1318,10 @@ void EmulatorWindow::FileOpen() {
   }
 }
 
-void EmulatorWindow::FileClose() { emulator_->TerminateTitle(); }
+void EmulatorWindow::FileClose() {
+  StopDiscWatcher();
+  emulator_->TerminateTitle();
+}
 
 void EmulatorWindow::InstallContent() {
   std::vector<std::filesystem::path> paths;
@@ -2284,6 +2301,110 @@ std::string EmulatorWindow::CanonicalizeFileExtension(
   return xe::utf8::lower_ascii(xe::path_to_utf8(path.extension()));
 }
 
+void EmulatorWindow::StartDiscWatcher(
+    const std::filesystem::path& drive) {
+  StopDiscWatcher();
+  if (!cvars::disc_auto_swap || !Emulator::IsOpticalDrivePath(drive)) {
+    return;
+  }
+
+  std::string identity = vfs::OpticalDiscDevice::GetVolumeIdentity(drive);
+  if (identity.empty()) {
+    return;
+  }
+
+  disc_watcher_stop_.store(false);
+  disc_watcher_drive_ = drive;
+  disc_watcher_identity_ = identity;
+  disc_watcher_thread_ = std::thread(
+      [this, drive, identity]() mutable {
+        while (!disc_watcher_stop_.load()) {
+          for (int i = 0; i < 12 && !disc_watcher_stop_.load(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+          }
+          if (disc_watcher_stop_.load()) {
+            break;
+          }
+
+          std::string current =
+              vfs::OpticalDiscDevice::GetVolumeIdentity(drive);
+          if (current.empty() || current == identity) {
+            continue;
+          }
+
+          XELOGI("Disc change detected in {}", xe::path_to_utf8(drive));
+          bool is_game_disc = false;
+          for (int attempt = 0; attempt < 5 && !disc_watcher_stop_.load();
+               ++attempt) {
+            if (vfs::OpticalDiscDevice::IsXbox360Disc(drive)) {
+              is_game_disc = true;
+              break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(700));
+          }
+          if (!is_game_disc) {
+            XELOGI("The new media in {} is not an Xbox 360 game disc.",
+                   xe::path_to_utf8(drive));
+            identity = current;
+            continue;
+          }
+
+          if (RestartWithDisc(drive)) {
+            disc_watcher_stop_.store(true);
+            app_context_.CallInUIThread([this]() { window_->RequestClose(); });
+            break;
+          }
+          identity = current;
+        }
+      });
+  XELOGI("Disc auto-swap enabled for {}.", xe::path_to_utf8(drive));
+}
+
+void EmulatorWindow::StopDiscWatcher() {
+  disc_watcher_stop_.store(true);
+  if (disc_watcher_thread_.joinable()) {
+    disc_watcher_thread_.join();
+  }
+  disc_watcher_drive_.clear();
+  disc_watcher_identity_.clear();
+}
+
+bool EmulatorWindow::RestartWithDisc(const std::filesystem::path& drive) {
+#if !XE_PLATFORM_WIN32
+  (void)drive;
+  return false;
+#else
+  wchar_t exe_path[MAX_PATH] = {};
+  if (!GetModuleFileNameW(nullptr, exe_path, MAX_PATH)) {
+    return false;
+  }
+
+  std::wstring command = L"\"" + std::wstring(exe_path) + L"\" --target=" +
+                         drive.wstring() + L" --wait_for_pid=" +
+                         std::to_wstring(GetCurrentProcessId());
+  std::filesystem::path exe_directory =
+      std::filesystem::path(exe_path).parent_path();
+
+  STARTUPINFOW startup_info = {};
+  startup_info.cb = sizeof(startup_info);
+  PROCESS_INFORMATION process_info = {};
+  if (!CreateProcessW(exe_path, command.data(), nullptr, nullptr, FALSE, 0,
+                      nullptr, exe_directory.c_str(), &startup_info,
+                      &process_info)) {
+    XELOGE("Failed to restart Xenia for the new disc in {} (error {}).",
+           xe::path_to_utf8(drive), GetLastError());
+    return false;
+  }
+
+  CloseHandle(process_info.hThread);
+  CloseHandle(process_info.hProcess);
+  XELOGI("Restarting Xenia for the new disc in {} (PID {} waiting for {}).",
+         xe::path_to_utf8(drive), process_info.dwProcessId,
+         GetCurrentProcessId());
+  return true;
+#endif  // XE_PLATFORM_WIN32
+}
+
 xe::X_STATUS EmulatorWindow::RunTitle(
     const std::filesystem::path& path_to_file) {
   const bool is_optical_drive = Emulator::IsOpticalDrivePath(path_to_file);
@@ -2324,6 +2445,8 @@ xe::X_STATUS EmulatorWindow::RunTitle(
 
     return X_STATUS_UNSUCCESSFUL;
   }
+
+  StopDiscWatcher();
 
   // Prevent crashing the emulator by not loading a game if a game is already
   // loaded. Drive roots must not be made absolute relative to the current
@@ -2374,6 +2497,11 @@ xe::X_STATUS EmulatorWindow::RunTitle(
 
     emulator_->file_system()->Clear();
   } else {
+    if (is_optical_drive) {
+      StartDiscWatcher(launch_path);
+    } else {
+      StopDiscWatcher();
+    }
     if (!is_optical_drive) {
       AddRecentlyLaunchedTitle(path_to_file, emulator_->title_name());
 

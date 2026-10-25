@@ -45,6 +45,13 @@ constexpr uint32_t kCacheBlockSectors = 32;
 constexpr size_t kCacheBlockCount = 64;
 constexpr uint32_t kScsiSenseSize = 32;
 
+// The first entry is the game partition of a trimmed image. The last entry is
+// the game partition of a full Xbox 360 disc, including the video partition.
+// The other offsets are used by some image layouts.
+constexpr uint64_t kLikelyGameOffsets[] = {
+    0x00000000, 0x0000FB20, 0x00020600, 0x02080000, kXgdGamePartitionOffset,
+};
+
 #if XE_PLATFORM_WIN32
 bool ParseDriveLetter(const std::filesystem::path& path, wchar_t* out_letter,
                       bool* out_explicit_device) {
@@ -451,6 +458,56 @@ std::vector<std::string> OpticalDiscDevice::GetAvailableDrivePaths() {
   return drives;
 }
 
+std::string OpticalDiscDevice::GetVolumeIdentity(
+    const std::filesystem::path& path) {
+#if !XE_PLATFORM_WIN32
+  (void)path;
+  return {};
+#else
+  wchar_t letter = 0;
+  bool explicit_device = false;
+  if (!ParseDriveLetter(path, &letter, &explicit_device)) {
+    return {};
+  }
+  const wchar_t root[] = {letter, L':', L'\\', 0};
+
+  wchar_t label[256] = {};
+  DWORD serial_number = 0;
+  DWORD max_component_length = 0;
+  DWORD file_system_flags = 0;
+  if (!GetVolumeInformationW(root, label, xe::countof(label), &serial_number,
+                             &max_component_length, &file_system_flags, nullptr,
+                             0)) {
+    return {};
+  }
+
+  ULARGE_INTEGER total_size = {};
+  GetDiskFreeSpaceExW(root, nullptr, &total_size, nullptr);
+
+  return fmt::format("{}|{}", serial_number, total_size.QuadPart);
+#endif  // XE_PLATFORM_WIN32
+}
+
+bool OpticalDiscDevice::IsXbox360Disc(const std::filesystem::path& path) {
+  OpticalDiscReader reader;
+  std::string error;
+  if (!reader.Open(path, &error)) {
+    return false;
+  }
+
+  uint8_t volume_descriptor[kXESectorSize];
+  for (uint64_t game_offset : kLikelyGameOffsets) {
+    if (!reader.Read(game_offset + (32 * kXESectorSize), volume_descriptor,
+                     sizeof(volume_descriptor), &error)) {
+      continue;
+    }
+    if (std::memcmp(volume_descriptor, "MICROSOFT*XBOX*MEDIA", 20) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool OpticalDiscDevice::Initialize() {
   reader_ = std::make_unique<OpticalDiscReader>();
 
@@ -533,17 +590,10 @@ bool OpticalDiscDevice::VerifyMagic(ParseState* state, uint64_t offset) {
 }
 
 bool OpticalDiscDevice::Verify(ParseState* state) {
-  // The first entry is the game partition of a trimmed image. The last entry
-  // is the game partition of a full Xbox 360 disc, including the video
-  // partition. The other offsets are used by some image layouts.
-  static constexpr uint64_t likely_offsets[] = {
-      0x00000000, 0x0000FB20, 0x00020600, 0x02080000, kXgdGamePartitionOffset,
-  };
-
   bool read_any_partition = false;
   std::string last_read_error;
 
-  for (uint64_t game_offset : likely_offsets) {
+  for (uint64_t game_offset : kLikelyGameOffsets) {
     state->game_offset = game_offset;
 
     const uint64_t volume_descriptor_offset =
@@ -624,7 +674,7 @@ bool OpticalDiscDevice::ReadAllEntries(ParseState* state) {
 bool OpticalDiscDevice::ReadEntry(ParseState* state, const uint8_t* buffer,
                                   size_t buffer_size, uint16_t entry_ordinal,
                                   OpticalDiscEntry* parent, uint32_t depth) {
-  if (depth > 64) {
+  if (depth > 4096) {
     XELOGE("XDVDFS directory tree is too deep.");
     return false;
   }

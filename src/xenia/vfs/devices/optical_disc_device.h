@@ -80,6 +80,15 @@ class OpticalDiscDevice : public Device {
   // Returns the drive letters of all optical drives, as strings such as "D:".
   static std::vector<std::string> GetAvailableDrivePaths();
 
+  // Returns a cheap identity for the currently inserted media (volume serial
+  // number and size), or an empty string if the drive is empty.
+  static std::string GetVolumeIdentity(const std::filesystem::path& path);
+
+  // Checks whether the inserted media contains an Xbox 360 game partition at
+  // one of the known offsets. This performs a few raw sector reads and is
+  // intended to be called only when the media identity changes.
+  static bool IsXbox360Disc(const std::filesystem::path& path);
+
  private:
   enum class Error {
     kSuccess = 0,

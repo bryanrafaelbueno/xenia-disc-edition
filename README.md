@@ -36,12 +36,17 @@ title and build details.
 - **Direct optical disc support** through a new `OpticalDiscDevice` VFS backend.
 - Raw 2048-byte SCSI `READ(12)` sector reads, using
   `SCSI_PASS_THROUGH_DIRECT`.
-- Detection of the Xbox 360 game partition at the full-disc XGD offset
-  `0xFD90000` (LBA `0x1FB20`), plus the offsets used by trimmed images.
+- Detection of the Xbox 360 game partition at the full-disc XGD2 offset
+  `0xFD90000` (LBA `0x1FB20`), the XGD3 offset `0x2080000`, and the offsets
+  used by trimmed images.
 - On-demand XDVDFS parsing with a 4 MiB sector cache, so game files are read
   from the disc as needed.
+- Deep XDVDFS directory trees supported (tested with *GRID 2*, which uses the
+  `0x2080000` layout).
 - **File → Open Disc Drive → <letter>** menu in the emulator.
 - Command-line drive targets: `E:`, `E:\`, or `\\.\E:`.
+- **Native disc auto-swap** controlled by a Xenia config option, with no
+  external launcher, batch, or PowerShell scripts.
 - Existing ISO, XEX, STFS, ZAR, and folder launching still work.
 
 ## Requirements
@@ -67,11 +72,12 @@ Release builds are attached to the
 The Windows release archive contains:
 
 - `xenia_disc.exe`
-- `Launch-Disc.bat`
 - `README.md`
 - `LICENSE`
-- `disc-test.log` (the verification log for the release build)
+- Verification logs for the release build
 - `optical-disc-support.patch` (the changes against Xenia Canary)
+
+No launcher scripts are required or included.
 
 If you build from source, the executable is produced as
 `build/bin/Windows/Release/xenia_disc.exe`.
@@ -94,15 +100,30 @@ The target can also be passed as a positional argument:
 xenia_disc.exe E:
 ```
 
-`Launch-Disc.bat` detects the first optical drive and starts Xenia with it. To
-choose a drive explicitly:
-
-```bat
-Launch-Disc.bat E:
-```
-
 Keep the disc inserted while playing. The game reads files from the disc on
 demand.
+
+### Native disc auto-swap
+
+Auto-swap is enabled by default for games launched from an optical drive. When
+a different Xbox 360 game disc is inserted, Xenia detects the new media and
+restarts itself with that game. This is implemented inside Xenia; no script is
+involved.
+
+The option is stored in `xenia-canary.config.toml`:
+
+```toml
+[General]
+disc_auto_swap = true
+```
+
+Set it to `false` to use the normal manual behavior (**File → Open Disc Drive**)
+without automatic restarts.
+
+Auto-swap intentionally restarts Xenia because the emulator does not support
+replacing a running title in place. Save the game before ejecting the disc. In
+multi-disc games, inserting the next disc starts that disc as a new title; it
+does not continue the campaign automatically.
 
 ## Building from source
 

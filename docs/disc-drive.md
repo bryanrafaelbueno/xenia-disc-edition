@@ -76,8 +76,10 @@ byte offsets; only the sector reads are aligned.
   used by the ISO backend.
 - Files are exposed as read-only entries. Because the image is not mapped,
   `can_map()` is false and file reads go through `ReadSync`.
-- A 32 MiB cap on directory buffers and a 64-entry recursion depth limit guard
-  against malformed directory tables.
+- A 32 MiB cap on directory buffers and a 4096-entry recursion depth limit
+  guard against malformed directory tables. The higher limit is needed for
+  discs such as *GRID 2*, which uses the `0x2080000` layout and has deeper
+  XDVDFS directory trees.
 
 The device reports `GDFX` as its name and 2048-byte sectors, matching the disc
 image device so guest code sees a normal optical disc.
@@ -97,6 +99,24 @@ image device so guest code sees a normal optical disc.
 - `EmulatorWindow::RunTitle` avoids resolving a drive root relative to the
   current directory and shows a disc-specific error message when mounting
   fails.
+
+## Native disc auto-swap
+
+`EmulatorWindow` starts a watcher after a successful launch from an optical
+drive when the `disc_auto_swap` config option is enabled (it is enabled by
+default). The watcher polls a cheap media identity — volume serial number and
+total size — without issuing raw disc reads during gameplay.
+
+When the identity changes, the watcher verifies that the new media contains an
+Xbox 360 game partition at one of the known offsets. If it does, Xenia starts a
+new instance of itself with `--target=<drive> --wait_for_pid=<current pid>` and
+requests the current window to close. The new instance waits for the old
+process to exit before initializing, so only one Xenia instance uses the
+configuration and cache at a time. This is a native restart path, not an
+external script.
+
+Set `disc_auto_swap = false` in `xenia-canary.config.toml` to disable the
+behavior and use the normal **File → Open Disc Drive** flow.
 
 ## Errors and diagnostics
 

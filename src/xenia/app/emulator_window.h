@@ -10,8 +10,10 @@
 #ifndef XENIA_APP_EMULATOR_WINDOW_H_
 #define XENIA_APP_EMULATOR_WINDOW_H_
 
+#include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
 
 #include "xenia/app/profile_dialogs.h"
 #include "xenia/emulator.h"
@@ -304,6 +306,10 @@ class EmulatorWindow {
 
   void ClearDialogs();
 
+  void StartDiscWatcher(const std::filesystem::path& drive);
+  void StopDiscWatcher();
+  bool RestartWithDisc(const std::filesystem::path& drive);
+
   Emulator* emulator_;
   ui::WindowedAppContext& app_context_;
   EmulatorWindowListener window_listener_;
@@ -330,6 +336,11 @@ class EmulatorWindow {
   std::unique_ptr<XMPConfigDialog> xmp_config_dialog_;
 
   std::vector<RecentTitleEntry> recently_launched_titles_;
+
+  std::thread disc_watcher_thread_;
+  std::atomic<bool> disc_watcher_stop_{false};
+  std::filesystem::path disc_watcher_drive_;
+  std::string disc_watcher_identity_;
 };
 
 }  // namespace app

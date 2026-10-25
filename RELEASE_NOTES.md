@@ -1,55 +1,57 @@
-# Xenia Disc Edition v1.0.0
+# Xenia Disc Edition v1.0.1
 
-First public release of Xenia Disc Edition, a fork of Xenia Canary with direct
-Xbox 360 optical disc support.
+Second release of Xenia Disc Edition, a fork of Xenia Canary with direct Xbox
+360 optical disc support.
 
 ## Highlights
 
-- Launch games directly from a compatible optical drive.
-- New `OpticalDiscDevice` VFS backend using raw SCSI `READ(12)` requests.
-- Automatic detection of the full-disc XGD game partition at `0xFD90000`
-  (LBA `0x1FB20`).
-- On-demand XDVDFS parsing with a bounded 4 MiB sector cache.
-- **File → Open Disc Drive → drive letter** menu.
-- Command-line drive targets (`E:`, `E:\`, `\\.\E:`).
+- **Native disc auto-swap**, controlled only by a Xenia config option.
+  - No batch files, PowerShell scripts, or external launchers.
+  - `disc_auto_swap = true` in `xenia-canary.config.toml` (enabled by default).
+  - When a different Xbox 360 game disc is inserted, Xenia restarts itself with
+    the new game using an internal wait-for-process handoff.
+- **Deep XDVDFS directory trees** are now supported (recursion limit raised from
+  64 to 4096). This fixes *GRID 2* and other discs that use the XGD3-style
+  `0x2080000` game partition.
+- Detection of both the XGD2 `0xFD90000` and XGD3 `0x2080000` game partition
+  offsets.
 - Existing ISO, XEX, STFS, ZAR, and folder launching remains available.
+
+## Configuration
+
+```toml
+[General]
+disc_auto_swap = true
+```
+
+Set it to `false` to use the normal manual **File → Open Disc Drive** behavior
+without automatic restarts.
 
 ## Release asset
 
-`Xenia-Disc-Edition-v1.0.0-win64.zip` contains:
+The Windows release archive contains:
 
 - `xenia_disc.exe`
-- `Launch-Disc.bat`
 - `README.md`
 - `LICENSE`
-- `disc-test.log`
-- `optical-disc-support.patch`
+- Verification logs for the release build
+- `optical-disc-support.patch` (changes against Xenia Canary)
+- `BUILD-INFO.txt`
+- `SHA256SUMS.txt`
 
-SHA-256:
-
-```text
-94AAB852D63D61D7CC02B0BECA3362B995EC6210BA673128738AA7499413EB13
-```
+No launcher scripts are included.
 
 ## Verification
 
-Tested on Windows 11 x64 with:
+Tested on Windows 11 x64 with an ATAPI `iHAS122 F` drive at `E:`:
 
-- Drive: ATAPI `iHAS122 F` at `E:`
-- Disc: *Call of Duty: Black Ops* (title ID `41560855`)
-- Graphics backend: Direct3D 12
-
-The emulator logged:
-
-```text
-Opened optical drive \\.\E: (2048 byte sectors, reported media size 7838695424).
-Found XDVDFS at disc offset 0xFD90000.
-Mounted optical disc from \\.\E:: XDVDFS at 0xFD90000, root sector 7631, root size 4096 bytes.
-Loading module GAME:\default.xex
-Title name: Call of Duty Black Ops
-```
-
-The title opened and read its data files directly from the disc.
+- *Call of Duty: Black Ops* (`41560855`), XGD2 layout at `0xFD90000`.
+- *Portal 2* (`45410912`), XGD2 layout at `0xFD90000`.
+- *GRID 2* (`434D0844`), XGD3-style layout at `0x2080000`; this disc previously
+  failed with `XDVDFS directory tree is too deep`.
+- *LEGO Marvel's Avengers* and *DuckTales: Remastered* were used for the native
+  auto-swap test. The log shows the change detection, the restart handoff, and
+  the next title loading automatically.
 
 ## Important requirements
 
@@ -60,7 +62,10 @@ drive). This project does not modify drive firmware or bypass protections.
 
 ## Known limitations
 
-- Multi-disc swapping through an in-game prompt is not implemented.
+- Auto-swap restarts Xenia; it does not replace a running title in place. Save
+  the game before ejecting the disc.
+- Multi-disc games are not continued automatically; inserting the next disc
+  starts that disc as a new title.
 - The disc must remain inserted during play.
 - Loading is limited by the optical drive's speed.
 - This release is based on Xenia Canary commit `451f915`.
